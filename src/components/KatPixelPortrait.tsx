@@ -1,5 +1,12 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import defaultPortraitSrc from '../assets/kat-portrait.png';
+import {
+  createBlinkController,
+  getDebugBlinkMask,
+  type BlinkController,
+  type BlinkPhase,
+  type DebugBlinkMaskId,
+} from './eyeBlink';
 import {
   createPortraitRenderCache,
   invalidateThemedCache,
@@ -27,11 +34,19 @@ export type KatPixelPortraitProps = {
   /** Path to the local portrait asset (single source of truth). */
   src?: string;
   className?: string;
+  /**
+   * Temporary DEBUG BLINK: when true, click-blink is disabled, phase stays OPEN,
+   * and optional mask overlay is drawn from the real blink masks.
+   */
+  debugBlink?: boolean;
+  debugMaskId?: DebugBlinkMaskId;
+  debugPixelGrid?: boolean;
 };
 
 /**
  * KatPixelPortrait — reusable React + Canvas pixel-art portrait.
  * Preserves the original vanilla visual output and rendering pipeline.
+ * Click the portrait to trigger one blink (disabled while DEBUG BLINK is on).
  */
 export function KatPixelPortrait({
   theme = 'red',
@@ -40,35 +55,89 @@ export function KatPixelPortrait({
   pixelScale = 1,
   src = defaultPortraitSrc,
   className,
+  debugBlink = false,
+  debugMaskId = 'OPEN',
+  debugPixelGrid = false,
 }: KatPixelPortraitProps) {
   const portraitRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef<PortraitRenderCache>(createPortraitRenderCache());
   const loadTokenRef = useRef(0);
+  const blinkRef = useRef<BlinkController | null>(null);
+  const blinkPhaseRef = useRef<BlinkPhase>('OPEN');
+  const debugBlinkRef = useRef(debugBlink);
+  debugBlinkRef.current = debugBlink;
+
   const optionsRef = useRef<PortraitPaintOptions>({
     theme,
     background,
     pixelScale: 1,
     size,
+    blinkPhase: 'OPEN',
+    debugMaskOverlay: null,
   });
 
   const resolvedTheme = resolveTheme(theme);
   const resolvedBg = background || resolvedTheme.background;
   const safePixelScale = Math.max(1, Math.round(pixelScale));
 
+  const debugSpans = debugBlink ? getDebugBlinkMask(debugMaskId) : [];
   optionsRef.current = {
     theme,
     background,
     pixelScale: safePixelScale,
     size,
+    // Debug mode: never run the blink frame path — OPEN portrait + overlay only.
+    blinkPhase: debugBlink ? 'OPEN' : blinkPhaseRef.current,
+    debugMaskOverlay: debugBlink
+      ? {
+          spans: debugSpans,
+          pixelGrid: debugPixelGrid,
+          gridX0: 450,
+          gridX1: 525,
+          gridY0: 640,
+          gridY1: 690,
+        }
+      : null,
   };
 
   const paint = () => {
     const canvas = canvasRef.current;
     const portraitEl = portraitRef.current;
     if (!canvas || !portraitEl) return;
+    if (!debugBlinkRef.current) {
+      optionsRef.current.blinkPhase = blinkPhaseRef.current;
+      optionsRef.current.debugMaskOverlay = null;
+    }
     paintPortrait(canvas, portraitEl, cacheRef.current, optionsRef.current);
   };
+
+  // Blink controller: phase changes repaint via refs (no React re-renders).
+  useEffect(() => {
+    const controller = createBlinkController({
+      onPhaseChange: (phase) => {
+        blinkPhaseRef.current = phase;
+        if (!debugBlinkRef.current) paint();
+      },
+    });
+    blinkRef.current = controller;
+    return () => {
+      controller.dispose();
+      blinkRef.current = null;
+      blinkPhaseRef.current = 'OPEN';
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Entering debug: cancel any in-flight blink; stay on OPEN + overlay.
+  useEffect(() => {
+    if (debugBlink) {
+      blinkRef.current?.dispose();
+      blinkPhaseRef.current = 'OPEN';
+    }
+    paint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debugBlink, debugMaskId, debugPixelGrid]);
 
   // Load / reload source image when `src` changes (matches original).
   useEffect(() => {
@@ -91,7 +160,6 @@ export function KatPixelPortrait({
     return () => {
       cancelled = true;
     };
-    // paint reads latest options via optionsRef
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
@@ -109,9 +177,21 @@ export function KatPixelPortrait({
     return () => {
       ro.disconnect();
     };
-    // paint reads latest options via optionsRef
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme, background, safePixelScale, size]);
+
+  const handlePortraitClick = () => {
+    if (debugBlinkRef.current) return;
+    blinkRef.current?.trigger();
+  };
+
+  const handlePortraitKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (debugBlinkRef.current) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      blinkRef.current?.trigger();
+    }
+  };
 
   const rootClassName = ['kat-pixel-portrait', className].filter(Boolean).join(' ');
 
@@ -131,6 +211,11 @@ export function KatPixelPortrait({
         ref={portraitRef}
         className="kat-pixel-portrait__frame"
         style={size != null ? { width: `${size}px` } : undefined}
+        onClick={handlePortraitClick}
+        onKeyDown={handlePortraitKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={debugBlink ? 'Blink debug overlay' : 'Play eye blink'}
       >
         <canvas ref={canvasRef} className="kat-pixel-portrait__canvas" />
       </div>

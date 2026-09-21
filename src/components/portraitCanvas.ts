@@ -1,10 +1,32 @@
+import {
+  applyEyeBlinkToImageData,
+  type BlinkPhase,
+  type PixelSpan,
+} from './eyeBlink';
 import { clamp01, resolveTheme, sampleStops, type ThemeId } from './themes';
+
+/** Optional per-source-pixel overlay for blink-mask debugging (no-op when omitted). */
+export type DebugMaskOverlayOptions = {
+  spans: readonly PixelSpan[];
+  pixelGrid?: boolean;
+  gridX0?: number;
+  gridX1?: number;
+  gridY0?: number;
+  gridY1?: number;
+};
 
 export type PortraitPaintOptions = {
   theme: ThemeId;
   background: string | null;
   pixelScale: number;
   size: number | null;
+  /** Current eye blink phase; OPEN leaves the themed bitmap untouched. */
+  blinkPhase?: BlinkPhase;
+  /**
+   * Temporary DEBUG BLINK overlay. Drawn after the OPEN/blink frame in source
+   * coordinates mapped through the same contain transform. Omitted = no change.
+   */
+  debugMaskOverlay?: DebugMaskOverlayOptions | null;
 };
 
 /** Mutable cache for source / themed bitmaps across paints. */
@@ -13,6 +35,8 @@ export type PortraitRenderCache = {
   sourceCanvas: HTMLCanvasElement | null;
   themedCanvas: HTMLCanvasElement | null;
   themedThemeId: ThemeId | null;
+  /** Scratch canvas for blink frames (never mutates themedCanvas). */
+  blinkCanvas: HTMLCanvasElement | null;
 };
 
 export function createPortraitRenderCache(): PortraitRenderCache {
@@ -21,6 +45,7 @@ export function createPortraitRenderCache(): PortraitRenderCache {
     sourceCanvas: null,
     themedCanvas: null,
     themedThemeId: null,
+    blinkCanvas: null,
   };
 }
 
@@ -117,6 +142,41 @@ function ensureThemedCanvas(cache: PortraitRenderCache, themeId: ThemeId): HTMLC
 }
 
 /**
+ * Build a blink frame from the OPEN themed bitmap without mutating the cache.
+ */
+function ensureBlinkFrame(
+  cache: PortraitRenderCache,
+  themed: HTMLCanvasElement,
+  phase: BlinkPhase,
+): HTMLCanvasElement | null {
+  if (phase === 'OPEN') return themed;
+
+  const w = themed.width;
+  const h = themed.height;
+  let blink = cache.blinkCanvas;
+  if (!blink || blink.width !== w || blink.height !== h) {
+    blink = document.createElement('canvas');
+    blink.width = w;
+    blink.height = h;
+    cache.blinkCanvas = blink;
+  }
+
+  const openCtx = themed.getContext('2d', { willReadFrequently: true });
+  const blinkCtx = blink.getContext('2d', { willReadFrequently: true });
+  if (!openCtx || !blinkCtx) return themed;
+
+  blinkCtx.imageSmoothingEnabled = false;
+  blinkCtx.clearRect(0, 0, w, h);
+  blinkCtx.drawImage(themed, 0, 0);
+
+  const openData = openCtx.getImageData(0, 0, w, h);
+  const blinkData = blinkCtx.getImageData(0, 0, w, h);
+  applyEyeBlinkToImageData(blinkData, openData, phase, w);
+  blinkCtx.putImageData(blinkData, 0, 0);
+  return blink;
+}
+
+/**
  * Paint the portrait into `canvas` using nearest-neighbor scaling.
  * Preserves the original vanilla rendering pipeline.
  */
@@ -131,6 +191,7 @@ export function paintPortrait(
 
   const theme = resolveTheme(options.theme);
   const bg = options.background || theme.background;
+  const blinkPhase: BlinkPhase = options.blinkPhase ?? 'OPEN';
 
   const rect = portraitEl.getBoundingClientRect();
   const cssSize = Math.max(
@@ -157,14 +218,68 @@ export function paintPortrait(
   const themed = ensureThemedCanvas(cache, options.theme);
   if (!themed) return;
 
-  const scale = Math.min(bufferSize / themed.width, bufferSize / themed.height);
-  const drawW = Math.max(1, Math.round(themed.width * scale));
-  const drawH = Math.max(1, Math.round(themed.height * scale));
+  const frame = ensureBlinkFrame(cache, themed, blinkPhase);
+  if (!frame) return;
+
+  const scale = Math.min(bufferSize / frame.width, bufferSize / frame.height);
+  const drawW = Math.max(1, Math.round(frame.width * scale));
+  const drawH = Math.max(1, Math.round(frame.height * scale));
   const dx = Math.floor((bufferSize - drawW) / 2);
   const dy = Math.floor((bufferSize - drawH) / 2);
 
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(themed, dx, dy, drawW, drawH);
+  ctx.drawImage(frame, dx, dy, drawW, drawH);
+
+  const overlay = options.debugMaskOverlay;
+  if (overlay) {
+    paintDebugMaskOverlay(ctx, frame.width, frame.height, dx, dy, drawW, drawH, overlay);
+  }
+}
+
+/** Highlight exact source texels from a blink mask (1 fillRect per source pixel). */
+function paintDebugMaskOverlay(
+  ctx: CanvasRenderingContext2D,
+  srcW: number,
+  srcH: number,
+  dx: number,
+  dy: number,
+  drawW: number,
+  drawH: number,
+  overlay: DebugMaskOverlayOptions,
+): void {
+  const sx = drawW / srcW;
+  const sy = drawH / srcH;
+
+  if (overlay.spans.length > 0) {
+    ctx.fillStyle = 'rgba(255, 0, 255, 0.72)';
+    for (const { y, x0, x1 } of overlay.spans) {
+      for (let x = x0; x <= x1; x++) {
+        ctx.fillRect(dx + x * sx, dy + y * sy, sx, sy);
+      }
+    }
+  }
+
+  if (!overlay.pixelGrid) return;
+
+  const gx0 = overlay.gridX0 ?? 450;
+  const gx1 = overlay.gridX1 ?? 525;
+  const gy0 = overlay.gridY0 ?? 640;
+  const gy1 = overlay.gridY1 ?? 690;
+
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.35)';
+  ctx.lineWidth = Math.max(1, Math.min(sx, sy) * 0.08);
+  ctx.beginPath();
+  for (let x = gx0; x <= gx1 + 1; x++) {
+    const px = dx + x * sx;
+    ctx.moveTo(px, dy + gy0 * sy);
+    ctx.lineTo(px, dy + (gy1 + 1) * sy);
+  }
+  for (let y = gy0; y <= gy1 + 1; y++) {
+    const py = dy + y * sy;
+    ctx.moveTo(dx + gx0 * sx, py);
+    ctx.lineTo(dx + (gx1 + 1) * sx, py);
+  }
+  ctx.stroke();
 }
 
 export function loadPortraitImage(src: string): Promise<HTMLImageElement> {

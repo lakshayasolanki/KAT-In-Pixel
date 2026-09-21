@@ -1,0 +1,61 @@
+.blink-mask-debug {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px dashed color-mix(in srgb, currentColor 45%, transparent);
+  font: 0.7rem/1.45 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.blink-mask-debug__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+}
+
+.blink-mask-debug__row button {
+  appearance: none;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+}
+
+.blink-mask-debug__row button[aria-pressed='true'] {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.blink-mask-debug__stats,
+.blink-mask-debug__hover,
+.blink-mask-debug__zoom-caption {
+  margin: 0.65rem 0 0;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.blink-mask-debug__hover {
+  color: #ff4dff;
+}
+
+.blink-mask-debug__zoom-wrap {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: auto;
+  max-width: 100%;
+}
+
+.blink-mask-debug__zoom {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: crosshair;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  background: #000;
+}
