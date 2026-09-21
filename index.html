@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kat Pixel Portrait</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        background: #0d0102;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #c44;
+      }
+
+      .frame {
+        width: min(92vw, 560px);
+      }
+
+      .hint {
+        margin-top: 1rem;
+        font-size: 0.75rem;
+        opacity: 0.7;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <!--
+        Customizable attributes:
+          size         — CSS pixel width (omit for fluid 100% width)
+          background   — canvas fill behind the portrait
+          pixel-scale  — CSS pixels per logical pixel (chunkier when > 1)
+          src          — optional override for the local asset path
+      -->
+      <kat-pixel-portrait background="#3e0001" pixel-scale="1"></kat-pixel-portrait>
+      <p class="hint">kat-pixel-portrait · canvas · nearest-neighbor</p>
+    </div>
+
+    <script type="module">
+      import './src/KatPixelPortrait.js';
+    </script>
+  </body>
+</html>
