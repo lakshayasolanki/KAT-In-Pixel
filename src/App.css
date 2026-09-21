@@ -1,0 +1,54 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  background: #0d0102;
+  color: #c44;
+  transition: background 160ms linear;
+}
+
+body[data-theme='blue'] {
+  background: #010614;
+  color: #3db0ff;
+}
+
+.frame {
+  width: min(96vw, 920px);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+.toolbar button {
+  appearance: none;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: 500 0.75rem/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+
+.toolbar button[aria-pressed='true'] {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.hint {
+  margin-top: 0.85rem;
+  font: 0.7rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  opacity: 0.65;
+  text-align: center;
+}
